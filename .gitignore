@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyc
+*.pyo
+*.egg-info/
+.eggs/
+dist/
+build/
+
+# Weights (large binary files - download via HuggingFace)
+weights/
+*.pth
+*.bin
+*.ckpt
+
+# Data
+data/
+*.zip
+
+# Streamlit
+.streamlit/secrets.toml
+
+# Env
+.env
+venv/
+.venv/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
