@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CRC-Scan | Clinical AI Workspace</title>
+  <meta name="description" content="AI-powered colorectal histopathology analysis. Tile-based CNN inference with Grad-CAM explainability and clinical metrics." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+
+  <!-- ═══════════════ HEADER ═══════════════ -->
+  <header class="header">
+    <div class="header-left">
+      <div class="header-logo">
+        <span class="logo-glyph">🔬</span>
+        <div class="logo-text">
+          <span class="logo-name">CRC-Scan</span>
+          <span class="logo-tagline">Clinical AI Workspace</span>
+        </div>
+      </div>
+      <div class="header-divider"></div>
+      <div class="header-meta">
+        <div id="modelStatusBadge" class="status-badge status-loading">
+          <span class="badge-dot"></span>Initializing…
+        </div>
+        <div id="deviceBadge" class="device-badge">—</div>
+      </div>
+    </div>
+    <div class="header-right">
+      <span class="header-version">STARC-9 · Custom CNN</span>
+    </div>
+  </header>
+
+  <!-- ═══════════════ LAYOUT ═══════════════ -->
+  <div class="layout">
+
+    <!-- ─── SIDEBAR ─── -->
+    <aside class="sidebar">
+
+      <div class="sidebar-block">
+        <p class="sidebar-label">📁 Slide Input</p>
+        <div id="uploadZone" class="upload-zone" role="button" tabindex="0"
+             aria-label="Upload histopathology slide">
+          <input type="file" id="fileInput" accept=".jpg,.jpeg,.png" hidden />
+          <div class="uz-ring"></div>
+          <div class="uz-body">
+            <div class="uz-icon">⬆</div>
+            <p class="uz-primary">Drop biopsy slide here</p>
+            <p class="uz-secondary">or click to browse</p>
+            <p class="uz-formats">PNG · JPG · JPEG</p>
+          </div>
+        </div>
+
+        <div id="previewContainer" class="preview-container hidden">
+          <div class="preview-header">
+            <span class="preview-filename" id="previewFilename">—</span>
+            <button class="preview-clear" id="clearBtn" title="Remove">✕</button>
+          </div>
+          <img id="previewImg" class="preview-image" alt="Slide preview" />
+          <div id="validationChip" class="validation-chip"></div>
+        </div>
+      </div>
+
+      <div class="sidebar-divider"></div>
+
+      <div class="sidebar-block">
+        <p class="sidebar-label">⚙️ Parameters</p>
+        <div class="param-row">
+          <span class="param-name">Uncertainty Threshold</span>
+          <span class="param-val mono" id="thresholdDisplay">70%</span>
+        </div>
+        <input type="range" id="thresholdSlider" class="slider" min="0" max="100" value="70"
+               aria-label="Uncertainty threshold" />
+        <p class="param-hint">Lower = decisive. Higher = human review flags.</p>
+      </div>
+
+      <div class="sidebar-divider"></div>
+
+      <div class="sidebar-block">
+        <button id="runBtn" class="btn-primary" disabled>
+          <span>🚀</span> Execute AI Pipeline
+        </button>
+        <button id="resetBtn" class="btn-secondary hidden">
+          <span>🗑️</span> Reset Workspace
+        </button>
+      </div>
+
+      <div class="sidebar-divider"></div>
+
+      <div class="sidebar-block">
+        <p class="sidebar-label">🎨 Tissue Legend</p>
+        <div id="tissueLegend" class="tissue-legend">
+          <!-- Populated by JS -->
+        </div>
+      </div>
+
+    </aside><!-- /sidebar -->
+
+    <!-- ─── MAIN CONTENT ─── -->
+    <main class="main-content">
+
+      <!-- Welcome State -->
+      <div id="stateWelcome" class="state-panel state-welcome">
+        <div class="welcome-glass">
+          <div class="welcome-icon">🔬</div>
+          <h2 class="welcome-heading">CRC-Scan Clinical AI</h2>
+          <p class="welcome-body">
+            Upload a colorectal H&amp;E-stained biopsy slide to begin<br />
+            AI-powered tissue decomposition and diagnostic analysis.
+          </p>
+          <div class="welcome-chips">
+            <span class="chip">⚡ Tile-based CNN</span>
+            <span class="chip">🗺️ Spatial heatmap</span>
+            <span class="chip">🧬 Grad-CAM XAI</span>
+            <span class="chip">📊 Clinical metrics</span>
+          </div>
+          <div class="model-info-row">
+            <div class="model-info-item">
+              <span class="model-info-val">9</span>
+              <span class="model-info-key">Classes</span>
+            </div>
+            <div class="model-info-sep"></div>
+            <div class="model-info-item">
+              <span class="model-info-val">256px</span>
+              <span class="model-info-key">Tile Size</span>
+            </div>
+            <div class="model-info-sep"></div>
+            <div class="model-info-item">
+              <span class="model-info-val">CNN</span>
+              <span class="model-info-key">Architecture</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Invalid Image State -->
+      <div id="stateInvalid" class="state-panel state-invalid hidden">
+        <div class="invalid-glass">
+          <div class="invalid-icon">⛔</div>
+          <h2 class="invalid-heading">Non-Tissue Image Detected</h2>
+          <p id="invalidReason" class="invalid-reason">—</p>
+          <p class="invalid-hint">Please upload a colorectal biopsy scan with pink/purple H&amp;E staining.</p>
+        </div>
+      </div>
+
+      <!-- Loading State -->
+      <div id="stateLoading" class="state-panel state-loading hidden">
+        <div class="loading-glass">
+          <div class="loading-orb">
+            <div class="orb-ring r1"></div>
+            <div class="orb-ring r2"></div>
+            <div class="orb-ring r3"></div>
+            <span class="orb-icon">🧬</span>
+          </div>
+          <h2 class="loading-heading">Analyzing Tissue Patterns</h2>
+          <p class="loading-sub">Running CNN inference across slide tiles…</p>
+          <div class="loading-steps">
+            <div class="lstep active" id="ls1">
+              <span class="lstep-dot"></span>Validating H&amp;E stain
+            </div>
+            <div class="lstep" id="ls2">
+              <span class="lstep-dot"></span>Tiling inference
+            </div>
+            <div class="lstep" id="ls3">
+              <span class="lstep-dot"></span>Building heatmap
+            </div>
+            <div class="lstep" id="ls4">
+              <span class="lstep-dot"></span>Computing clinical metrics
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Analysis Results State -->
+      <div id="stateAnalysis" class="state-panel state-analysis hidden">
+
+        <!-- Row 1: Heatmap + Donut -->
+        <div class="row-top">
+
+          <div class="card heatmap-card">
+            <div class="card-hdr">
+              <div>
+                <h3 class="card-title">🗺️ AI Heatmap Discovery</h3>
+                <p class="card-sub">Click any tile to view Grad-CAM explanation</p>
+              </div>
+              <div id="heatmapInfo" class="heatmap-info-badge hidden"></div>
+            </div>
+            <div class="heatmap-wrap" id="heatmapWrap">
+              <img id="heatmapImg" class="heatmap-img" alt="AI Tissue Heatmap" />
+              <div class="heatmap-crosshair" id="crosshair"></div>
+              <!-- Feature 3: Magnification Lens -->
+              <div class="magnifier-lens" id="magnifierLens"></div>
+              <div class="magnifier-badge">🔍 Hover to magnify original slide</div>
+            </div>
+          </div>
+
+          <div class="card donut-card">
+            <div class="card-hdr">
+              <h3 class="card-title">📊 Distribution</h3>
+            </div>
+            <div class="donut-wrap">
+              <canvas id="donutChart"></canvas>
+              <div class="donut-center" id="donutCenter">
+                <span class="dc-label" id="dcLabel">—</span>
+                <span class="dc-val" id="dcVal">—</span>
+              </div>
+            </div>
+            <div id="dominantLabel" class="dominant-label"></div>
+          </div>
+
+        </div><!-- /row-top -->
+
+        <!-- Bar Chart full width -->
+        <div class="card bar-card">
+          <div class="card-hdr">
+            <h3 class="card-title">📈 Tissue Breakdown</h3>
+          </div>
+          <div class="bar-wrap">
+            <canvas id="barChart"></canvas>
+          </div>
+        </div>
+
+        <!-- Feature 1: TME Radar Chart -->
+        <div class="card tme-card">
+          <div class="card-hdr">
+            <div>
+              <h3 class="card-title">🕸️ Tumor Microenvironment (TME) Fingerprint</h3>
+              <p class="card-sub">Patient profile vs healthy reference baseline · Normalized clinical axes</p>
+            </div>
+            <div class="tme-badge" id="tmeBadge">—</div>
+          </div>
+          <div class="tme-body">
+            <div class="radar-wrap">
+              <canvas id="tmeChart"></canvas>
+            </div>
+            <div class="tme-insights" id="tmeCommentary">
+              <!-- Populated by JS -->
+            </div>
+          </div>
+        </div>
+
+        <!-- Clinical Metrics -->
+        <div class="card metrics-card">
+          <div class="card-hdr">
+            <h3 class="card-title">🧠 Clinical Insights &amp; Heuristics</h3>
+          </div>
+          <div class="metrics-grid">
+            <div class="metric" id="mTumor">
+              <div class="metric-icon" style="color:#FF0055">●</div>
+              <div class="metric-body">
+                <div class="metric-name">Tumor Content</div>
+                <div class="metric-val" id="mTumorVal">—</div>
+                <div class="metric-tag" id="mTumorTag"></div>
+              </div>
+            </div>
+            <div class="metric" id="mTIL">
+              <div class="metric-icon" style="color:#9470C4">●</div>
+              <div class="metric-body">
+                <div class="metric-name">TIL Ratio (Immune)</div>
+                <div class="metric-val" id="mTILVal">—</div>
+                <div class="metric-tag">Lymphocytes / Tumor mass</div>
+              </div>
+            </div>
+            <div class="metric" id="mNec">
+              <div class="metric-icon" style="color:#9B9B9B">●</div>
+              <div class="metric-body">
+                <div class="metric-name">Necrotic Load</div>
+                <div class="metric-val" id="mNecVal">—</div>
+                <div class="metric-tag">Tumor aggression indicator</div>
+              </div>
+            </div>
+            <div class="metric" id="mUncert">
+              <div class="metric-icon" style="color:#FFFF00">●</div>
+              <div class="metric-body">
+                <div class="metric-name">MD Assistance</div>
+                <div class="metric-val" id="mUncertVal">—</div>
+                <div class="metric-tag">Human review regions</div>
+              </div>
+            </div>
+          </div>
+          <div class="diag-note" id="diagNote"></div>
+          <!-- Feature 2: PDF Export -->
+          <div class="export-row">
+            <button class="btn-export" id="exportPdfBtn">
+              📄 Export Clinical Report (PDF)
+            </button>
+            <span class="export-hint">Generates a structured pathology report with tissue data &amp; clinical metrics</span>
+          </div>
+        </div>
+
+        <!-- Grad-CAM Panel -->
+        <div class="card gradcam-card hidden" id="gradcamCard">
+          <div class="card-hdr">
+            <div>
+              <h3 class="card-title">⚡ Click-based Explainability (Grad-CAM)</h3>
+              <p class="card-sub">Activation map for the selected tile</p>
+            </div>
+            <button class="close-btn" id="gradcamClose">✕</button>
+          </div>
+          <div class="gradcam-loading" id="gradcamLoading">
+            <div class="mini-spinner"></div>
+            <span>Computing activation map…</span>
+          </div>
+          <div class="gradcam-result hidden" id="gradcamResult">
+            <div class="gradcam-images">
+              <div class="gradcam-img-block">
+                <p class="gradcam-img-lbl">Selected Tile</p>
+                <img id="gcTile" alt="Selected Tile" />
+              </div>
+              <div class="gradcam-arrow">→</div>
+              <div class="gradcam-img-block">
+                <p class="gradcam-img-lbl">Grad-CAM Activation</p>
+                <img id="gcMap" alt="Grad-CAM Activation Map" />
+              </div>
+            </div>
+            <div class="gradcam-meta">
+              <div class="gc-pred-label" id="gcPredLabel"></div>
+              <div class="gc-conf" id="gcConf"></div>
+              <div class="gc-gloss" id="gcGloss"></div>
+            </div>
+          </div>
+        </div>
+
+      </div><!-- /stateAnalysis -->
+
+    </main><!-- /main-content -->
+
+  </div><!-- /layout -->
+
+  <script src="js/app.js"></script>
+</body>
+</html>

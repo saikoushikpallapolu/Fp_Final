@@ -1,85 +1,54 @@
-# CRC-Scan Clinical AI Workspace
+# CRC-SCAN | Clinical AI Workspace
+=================================
+A clinical-grade histopathology diagnostic workstation built on the [STARC-9](https://huggingface.co/datasets/Path2AI/STARC-9) dataset. This workstation provides automated tissue decomposition, spatial discovery, and structured pathology reporting.
 
-A clinical-grade histopathology AI diagnostic tool built on the [STARC-9](https://huggingface.co/datasets/Path2AI/STARC-9) dataset from Stanford University.
+## 🚀 Key Features
+- **Calibrated CNN Inference**: Post-processed confidence scores (Temperature Scaling $T=1.5$) for realistic diagnostic filtering.
+- **TME Fingerprint (Radar)**: Visualizes the Tumor Microenvironment (Tumor, Immune, Stroma, Vascular, Necrosis) against healthy benchmarks.
+- **Pathology Lens**: Dual-layer magnification allowing pathologists to inspect original high-res slide tiles under the AI heatmap.
+- **Clinical PDF Reports**: Automatically generate hospital-ready reports with drawn microscope branding, quantitative bars, and TME visualizations.
+- **Permissive H&E Validation**: Intelligent image verification that ensures only legitimate tissue slides are processed.
 
-## Features
+## 🛠️ Architecture
+The system has been upgraded to a modern, decoupled high-performance stack:
+- **Backend**: FastAPI (Python) · PyTorch · Grad-CAM · FPDF2
+- **Frontend**: Vanilla ES6 JS · Chart.js · CSS3 (Glassmorphism & Modern Aesthetics)
+- **Model**: STARC-9 Custom CNN (ResNet-based architecture)
 
-- 🔬 **Sliding-Window Tile Inference** — Processes large biopsy slides using 256×256 tiles
-- 🎨 **Interactive AI Heatmap** — Color-coded tissue overlay with clinical legend
-- ⚠️ **Uncertainty Filtering** — Tiles below 70% confidence are flagged for human review
-- 📊 **Tissue Composition Charts** — Donut and bar charts for all 9 tissue classes
-- 🧠 **Clinical Insights** — TIL ratio, necrotic load, and automated diagnostic summaries
-- ⚡ **Grad-CAM Explainability** — Click any tile to generate an activation map
+## 📦 Setup & Execution
 
-## Tissue Classes
-
-| Code | Tissue |
-|------|--------|
-| ADI | Adipose |
-| LYM | Lymphocyte |
-| MUC | Mucin |
-| MUS | Muscle |
-| NCS | Necrotic Debris |
-| NOR | Normal |
-| BLD | Red Blood Cells |
-| FCT | Loose Connective Tissue |
-| TUM | Tumor |
-
-## Setup
-
-### 1. Install Dependencies
+### 1. Requirements
+Ensure you have Python 3.9+ and the STARC-9 dependencies installed:
 ```bash
-pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
-pip install streamlit timm grad-cam streamlit-image-coordinates altair pandas pillow scikit-learn seaborn
+pip install torch torchvision timm grad-cam fastapi uvicorn fpdf2 pillow opencv-python numpy
 ```
 
-### 2. Download Model Weights
+### 2. weights & Evaluation Repo
+The workstation requires the `STARC-9-Evaluation` submodule and trained weights:
 ```bash
-mkdir weights
-python -c "
-from huggingface_hub import hf_hub_download
-hf_hub_download(repo_id='Path2AI/STARC-9', filename='Model_weights/best_custom_cnn.pth', repo_type='dataset', local_dir='./weights')
-"
+# Weights should be located at ./weights/Model_weights/best_custom_cnn.pth
+# Submodule should be at ./STARC-9-Evaluation/
 ```
 
-### 3. Clone Evaluation Repository
+### 3. Launching the Workstation
+Run the centralized launcher script:
 ```bash
-git clone https://github.com/rathinaraja/STARC-9-Evaluation.git
+python run_server.py
 ```
+Then navigate to **http://localhost:8000** in your browser.
 
-### 4. Run the App
-```bash
-python -m streamlit run app.py
-```
+## 🔬 Classification Glossary
+| Code | Tissue Description |
+|---|---|
+| **ADI** | Adipose tissue (fat cells) |
+| **LYM** | Lymphocytes (immune infiltration) |
+| **MUC** | Mucin (secretory tissue) |
+| **MUS** | Smooth muscle layers |
+| **NCS** | Necrotic debris (cell death) |
+| **NOR** | Normal mucosal architecture |
+| **BLD** | Red blood cells (vascularity) |
+| **FCT** | Loose connective tissue (stroma) |
+| **TUM** | Malignant Adenocarcinoma cells |
 
-## Project Structure
-
-```
-FP_REF/
-├── app.py                    # Streamlit Clinical Dashboard
-├── multi_scale_model.py      # Dual-branch context-aware model
-├── STARC-9-Evaluation/       # Stanford baseline evaluation scripts
-│   ├── config.py
-│   ├── main.py
-│   ├── evaluate_model.py
-│   ├── CNN_model.py          # STARC-9 CustomCNN architecture
-│   └── ...
-└── weights/                  # Downloaded model checkpoints (not tracked in git)
-    └── Model_weights/
-        └── best_custom_cnn.pth
-```
-
-## Enhancements over Baseline
-
-1. **Confidence Thresholding** — 0.70 Softmax filter flags uncertain tiles
-2. **Dynamic Class Weights** — Balanced loss function fixing rare class accuracy
-3. **Multi-Scale Architecture** — Dual-branch ResNet50 for contextual awareness
-4. **Grad-CAM Explainability** — Visual justification for every prediction
-5. **Clinical Dashboard** — Streamlit frontend with real-time tissue analytics
-
-## Citation
-
-```
-Subramanian, B., et al. (2025). STARC-9: A large-scale dataset for multi-class tissue 
-classification for CRC histopathology. NeurIPS 2025 Datasets and Benchmarks Track.
-```
+---
+**Disclaimer**: This tool is for research and clinical decision support purposes. Final diagnosis must be verified by a human pathologist.

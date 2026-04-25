@@ -56,6 +56,89 @@ transform = transforms.Compose([
     transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
 ])
 
+# --- TISSUE VALIDATION LAYER ---
+def validate_histology_image(image: Image.Image):
+    """
+    Heuristic validator that checks whether an uploaded image is likely
+    an H&E-stained histopathology slide.
+
+    H&E slides have a very specific color fingerprint:
+      - Hematoxylin stains nuclei BLUE/PURPLE  (Hue ~ 200–300°)
+      - Eosin stains cytoplasm PINK/RED         (Hue ~ 300–360° and 0–30°)
+    
+    Returns: (is_valid: bool, reason: str)
+    """
+    img_rgb = np.array(image.convert("RGB")).astype(np.float32)
+    h, w = img_rgb.shape[:2]
+    
+    # --- Guard: minimum size ---
+    if h < 64 or w < 64:
+        return False, "Image is too small to be a diagnostic slide (minimum 64×64 px)."
+
+    R, G, B = img_rgb[:,:,0], img_rgb[:,:,1], img_rgb[:,:,2]
+    
+    # --- Guard: near-uniform / blank image ---
+    luminance = (0.299*R + 0.587*G + 0.114*B)
+    if luminance.std() < 8.0:
+        return False, "Image appears to be blank or near-uniform. Please upload a real histopathology scan."
+
+    # --- Guard: mostly white background (scanner background) ---
+    white_mask = (R > 230) & (G > 230) & (B > 230)
+    white_fraction = white_mask.mean()
+    if white_fraction > 0.95:
+        return False, "Image is almost entirely white. Please ensure the slide has tissue content."
+
+    # --- Core H&E Color Check ---
+    # Convert to HSV for hue analysis (manual, fast)
+    r_n, g_n, b_n = R/255.0, G/255.0, B/255.0
+    cmax = np.maximum(np.maximum(r_n, g_n), b_n)
+    cmin = np.minimum(np.minimum(r_n, g_n), b_n)
+    delta = cmax - cmin + 1e-8
+
+    # Saturation
+    S = np.where(cmax > 0, delta / cmax, 0)
+    
+    # Hue (degrees 0–360)
+    hue = np.zeros_like(cmax)
+    mask_r = (cmax == r_n) & (delta > 0)
+    mask_g = (cmax == g_n) & (delta > 0)
+    mask_b = (cmax == b_n) & (delta > 0)
+    hue[mask_r] = (60 * ((g_n[mask_r] - b_n[mask_r]) / delta[mask_r]) % 6)
+    hue[mask_g] = (60 * ((b_n[mask_g] - r_n[mask_g]) / delta[mask_g]) + 2)
+    hue[mask_b] = (60 * ((r_n[mask_b] - g_n[mask_b]) / delta[mask_b]) + 4)
+    hue = hue * 60  # scale to 0-360 where cmax-based was 0-6
+    # Re-normalize properly
+    hue2 = np.zeros_like(R)
+    valid = delta > 0.01
+    hue2[mask_r & valid] = (((g_n - b_n) / delta * 60) % 360)[mask_r & valid]
+    hue2[mask_g & valid] = (((b_n - r_n) / delta * 60) + 120)[mask_g & valid]
+    hue2[mask_b & valid] = (((r_n - g_n) / delta * 60) + 240)[mask_b & valid]
+
+    # Saturated pixels only (ignore white/gray background)
+    sat_mask = (S > 0.10) & (cmax > 0.15)
+    sat_pixels = sat_mask.sum()
+
+    if sat_pixels < (h * w * 0.015):
+        return False, "Insufficient color variation for H&E staining detection."
+
+    # H&E hue bands:
+    #   Eosin (pink):       hue2 ~  300–400 (extended)
+    #   Hematoxylin (blue): hue2 ~ 200–300
+    sat_hue = hue2[sat_mask]
+    pink_mask  = (sat_hue >= 300) | (sat_hue <= 40)
+    purple_mask = (sat_hue >= 200) & (sat_hue < 300)
+
+    he_frac = (pink_mask.sum() + purple_mask.sum()) / (sat_pixels + 1e-8)
+
+    # Threshold: 15% is extremely permissive to ensure NO legitimate tissue slides are rejected.
+    if he_frac < 0.15:
+        return (
+            False,
+            f"Image does not match H&E staining profiles (Detected {he_frac*100:.1f}% hues)."
+        )
+
+    return True, f"✅ Slide Verified ({he_frac*100:.1f}% H&E characteristic hues)."
+
 @st.cache_resource
 def load_clinical_model():
     """Loads inference model with the exact trained weights from STARC-9 repo."""
@@ -98,11 +181,15 @@ with col_sidebar:
     st.subheader("📁 Input Data")
     uploaded_file = st.file_uploader("Upload slide scan", type=['jpg', 'jpeg', 'png'])
     
-    # Auto-reset if a new file is uploaded
+    # Auto-reset if a new file is uploaded, and run tissue validation
     if uploaded_file and uploaded_file.name != st.session_state.last_uploaded_name:
         st.session_state.analysis_done = False
         st.session_state.last_uploaded_name = uploaded_file.name
-        st.session_state.original_image = Image.open(uploaded_file).convert("RGB")
+        raw_img = Image.open(uploaded_file).convert("RGB")
+        is_valid, reason = validate_histology_image(raw_img)
+        st.session_state.original_image = raw_img if is_valid else None
+        st.session_state.validation_ok = is_valid
+        st.session_state.validation_msg = reason
     
     st.info(status)
     
@@ -112,18 +199,32 @@ with col_sidebar:
     st.caption("Lower threshold promotes AI decisiveness; higher threshold increases human review flags.")
     
     if uploaded_file:
-        st.image(st.session_state.original_image, caption="Slide Preview", width=300)
+        if st.session_state.get("validation_ok"):
+            st.success(st.session_state.validation_msg)
+            st.image(st.session_state.original_image, caption="Slide Preview", width=300)
+        else:
+            st.error(f"❌ **Invalid Image Rejected**\n\n{st.session_state.get('validation_msg', 'Unknown error.')}")
 
 with col_main:
     if not st.session_state.analysis_done:
         if uploaded_file:
-            st.warning("Analysis pending. Click 'Execute Pipeline' in the sidebar to begin.")
-            if st.button("🚀 Execute AI Pipeline", type="primary", use_container_width=True):
-                # Analysis Logic
-                orig = st.session_state.original_image
-                w, h = orig.size
-                TILE_SIZE = 256
-                overlay = Image.new('RGBA', (w, h), (0, 0, 0, 0))
+            if not st.session_state.get("validation_ok", False):
+                st.markdown("""
+                <div style='padding: 30px; border-radius: 12px; background: #2a1a1a; border: 2px solid #D0021B; text-align: center;'>
+                    <h2 style='color: #FF4444;'>⛔ Non-Tissue Image Detected</h2>
+                    <p style='color: #ccc; font-size: 1.1em;'>This image does not match the expected H&E histopathology profile.<br>
+                    The clinical AI will not run analysis on non-tissue images to prevent false diagnostics.</p>
+                    <p style='color: #888;'>Please upload a colorectal biopsy scan with pink/purple H&E staining.</p>
+                </div>
+                """, unsafe_allow_html=True)
+            else:
+                st.warning("Analysis pending. Click **Execute AI Pipeline** below to begin.")
+                if st.button("🚀 Execute AI Pipeline", type="primary", use_container_width=True):
+                    # Analysis Logic
+                    orig = st.session_state.original_image
+                    w, h = orig.size
+                    TILE_SIZE = 256
+                    overlay = Image.new('RGBA', (w, h), (0, 0, 0, 0))
                 draw = ImageDraw.Draw(overlay)
                 counts = {cls: 0 for cls in CLASS_NAMES}
                 uncert = 0
